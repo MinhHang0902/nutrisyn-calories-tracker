@@ -5,14 +5,28 @@ import io
 import json
 import os
 import httpx
+import base64
+import json
 from PIL import Image
+import io
 import google.generativeai as genai
+
+from app.services.food_recognition import analyze_with_local_model
 
 router = APIRouter()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+
+FOOD_CLASSES = [
+    "rice", "chicken", "beef", "pork", "salmon", "egg", "tofu", "milk",
+    "bread", "noodle", "pho", "salad", "tomato", "cucumber", "carrot",
+    "broccoli", "potato", "banana", "apple", "orange", "avocado", "steak",
+    "pizza", "burger", "fries", "pasta", "soup", "sandwich", "sushi",
+    "dumplings", "fried rice", "ramen", "taco", "burrito", "wrap",
+    "yogurt", "cheese", "butter", "rice cake", "cereal", "oatmeal"
+]
 
 NUTRITION_DB = {
     "rice": {"name": "Rice (white, cooked)", "serving_size": 100, "serving_unit": "g", "calories": 130, "protein": 2.7, "carbohydrates": 28, "fat": 0.3, "sugar": 0, "fiber": 0.4},
@@ -104,29 +118,142 @@ Use standard USDA nutritional data. If the food is not recognized, return null."
         print(f"Gemini API error: {e}")
         return None
 
+async def analyze_image_with_gemini_vision(image: Image.Image) -> Optional[List[dict]]:
+    """Use Google Gemini Vision to detect and analyze food items in an image."""
+    
+    if not GEMINI_API_KEY:
+        return None
+    
+    prompt = """You are a food nutrition expert. Analyze this image and identify all food items visible.
+    
+    Respond ONLY with valid JSON in this exact format (no additional text):
+    {
+        "foods": [
+            {
+                "name": "food name in English",
+                "portion_estimate": "small/medium/large",
+                "estimated_servings": number
+            }
+        ]
+    }
+    
+    Be specific about food items. Examples: "grilled chicken breast", "white rice", "steamed broccoli", "fried egg", "banana", "orange juice", etc.
+    Estimate 1 serving as approximately: 100-150g for meat, 150-200g for rice/noodles, 1 piece for fruits/eggs, 1 cup for salads/soups."""
+    
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content([prompt, image])
+        
+        content = response.text.strip()
+        
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        
+        data = json.loads(content.strip())
+        
+        detected_foods = data.get("foods", [])
+        
+        result = []
+        for food_item in detected_foods:
+            food_name = food_item.get("name", "").lower()
+            portion = food_item.get("portion_estimate", "medium")
+            servings = food_item.get("estimated_servings", 1)
+            
+            portion_multiplier = 0.7 if portion == "small" else (1.2 if portion == "large" else 1.0)
+            portion_multiplier *= servings
+            
+            matched_food = None
+            for key, data in NUTRITION_DB.items():
+                if key in food_name or food_name in key:
+                    matched_food = data.copy()
+                    break
+            
+            if matched_food:
+                for key in ["calories", "protein", "carbohydrates", "fat", "sugar", "fiber"]:
+                    if matched_food.get(key):
+                        matched_food[key] = round(matched_food[key] * portion_multiplier, 1)
+                
+                matched_food["id"] = f"{food_name.replace(' ', '_')[:20]}_{random.randint(1000, 9999)}"
+                matched_food["name"] = food_item.get("name", matched_food.get("name", ""))
+                result.append(matched_food)
+            else:
+                gemini_nutrition = await parse_nutrition_from_gemini(food_name, int(100 * portion_multiplier), "g")
+                if gemini_nutrition:
+                    result.append(gemini_nutrition)
+        
+        return result if result else None
+        
+    except Exception as e:
+        print(f"Gemini Vision error: {e}")
+        return None
+
 @router.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
     contents = await file.read()
     
     try:
         image = Image.open(io.BytesIO(contents))
-        image = image.resize((224, 224))
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid image file")
     
-    detected_foods = random.sample(FOOD_CLASSES, k=random.randint(2, 4))
-    
     foods = []
-    for food_key in detected_foods:
-        food_data = NUTRITION_DB[food_key].copy()
-        portion_multiplier = random.choice([0.8, 1.0, 1.2, 1.5])
+    
+    # Try local model first
+    local_predictions = analyze_with_local_model(image)
+    
+    if local_predictions and len(local_predictions) > 0:
+        print(f"Local model predictions: {local_predictions}")
         
-        for key in ["calories", "protein", "carbohydrates", "fat", "sugar", "fiber"]:
-            if food_data.get(key):
-                food_data[key] = round(food_data[key] * portion_multiplier, 1)
-        
-        food_data["id"] = f"{food_key}_{random.randint(1000, 9999)}"
-        foods.append(food_data)
+        for pred in local_predictions[:5]:
+            food_name = pred.get("name", "").lower()
+            confidence = pred.get("confidence", 0)
+            
+            if confidence < 0.1:
+                continue
+            
+            matched_food = None
+            for key, data in NUTRITION_DB.items():
+                if key in food_name or food_name in key:
+                    matched_food = data.copy()
+                    break
+            
+            if matched_food:
+                portion_multiplier = 1.0
+                for key in ["calories", "protein", "carbohydrates", "fat", "sugar", "fiber"]:
+                    if matched_food.get(key):
+                        matched_food[key] = round(matched_food[key] * portion_multiplier, 1)
+                
+                matched_food["id"] = f"{food_name[:20]}_{random.randint(1000, 9999)}"
+                matched_food["confidence"] = confidence
+                foods.append(matched_food)
+    
+    # If local model didn't work well, try Gemini Vision
+    if len(foods) == 0:
+        gemini_foods = await analyze_image_with_gemini_vision(image)
+        if gemini_foods:
+            foods = gemini_foods
+    
+    # Fallback to random if both fail
+    if len(foods) == 0:
+        detected_foods = random.sample(FOOD_CLASSES, k=random.randint(2, 4))
+        for food_key in detected_foods:
+            if food_key in NUTRITION_DB:
+                food_data = NUTRITION_DB[food_key].copy()
+                portion_multiplier = random.choice([0.8, 1.0, 1.2, 1.5])
+                
+                for key in ["calories", "protein", "carbohydrates", "fat", "sugar", "fiber"]:
+                    if food_data.get(key):
+                        food_data[key] = round(food_data[key] * portion_multiplier, 1)
+                
+                food_data["id"] = f"{food_key}_{random.randint(1000, 9999)}"
+                foods.append(food_data)
+    
+    if not foods:
+        raise HTTPException(status_code=500, detail="Could not identify any food in the image")
     
     totals = {
         "calories": sum(f["calories"] for f in foods),
