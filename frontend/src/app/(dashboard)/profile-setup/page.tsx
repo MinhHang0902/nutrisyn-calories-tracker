@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ interface ProfileData {
   goal: "lose_weight" | "gain_muscle" | "maintain";
 }
 
-export default function ProfileSetupPage() {
+function ProfileSetupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isEditMode = searchParams.get("edit") === "true";
@@ -86,7 +86,7 @@ export default function ProfileSetupPage() {
       }
     };
     checkExistingProfile();
-  }, []);
+  }, [setProfile]);
 
   const calculateMetrics = async () => {
     setCalculating(true);
@@ -162,7 +162,7 @@ export default function ProfileSetupPage() {
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold mb-2">Welcome to NutriSyn!</h1>
             <p className="text-muted-foreground">
-              Let's set up your personalized nutrition plan
+              Let&apos;s set up your personalized nutrition plan
             </p>
           </div>
 
@@ -195,7 +195,7 @@ export default function ProfileSetupPage() {
                     Tell us about yourself
                   </CardTitle>
                   <CardDescription>
-                    We'll calculate your personalized nutrition targets
+                    We&apos;ll calculate your personalized nutrition targets
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -204,7 +204,7 @@ export default function ProfileSetupPage() {
                     <Label>Gender</Label>
                     <Select
                       value={formData.gender}
-                      onValueChange={(value: "male" | "female") => 
+                      onValueChange={(value: "male" | "female") =>
                         setFormData({ ...formData, gender: value })
                       }
                     >
@@ -304,8 +304,8 @@ export default function ProfileSetupPage() {
                     </Select>
                   </div>
 
-                  <Button 
-                    onClick={calculateMetrics} 
+                  <Button
+                    onClick={calculateMetrics}
                     disabled={calculating}
                     className="w-full"
                   >
@@ -391,16 +391,16 @@ export default function ProfileSetupPage() {
                   </div>
 
                   <div className="flex gap-3">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setStep(1)}
                       className="flex-1"
                     >
                       <ArrowLeft className="mr-2 h-4 w-4" />
                       Back
                     </Button>
-                    <Button 
-                      onClick={saveProfile} 
+                    <Button
+                      onClick={saveProfile}
                       disabled={loading}
                       className="flex-1"
                     >
@@ -580,7 +580,7 @@ export default function ProfileSetupPage() {
                   Tell us about yourself
                 </CardTitle>
                 <CardDescription>
-                  We'll calculate your personalized nutrition targets
+                  We&apos;ll calculate your personalized nutrition targets
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -589,7 +589,7 @@ export default function ProfileSetupPage() {
                   <Label>Gender</Label>
                   <Select
                     value={formData.gender}
-                    onValueChange={(value: "male" | "female") => 
+                    onValueChange={(value: "male" | "female") =>
                       setFormData({ ...formData, gender: value })
                     }
                   >
@@ -689,8 +689,8 @@ export default function ProfileSetupPage() {
                   </Select>
                 </div>
 
-                <Button 
-                  onClick={calculateMetrics} 
+                <Button
+                  onClick={calculateMetrics}
                   disabled={calculating}
                   className="w-full"
                 >
@@ -776,16 +776,16 @@ export default function ProfileSetupPage() {
                 </div>
 
                 <div className="flex gap-3">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={() => setStep(1)}
                     className="flex-1"
                   >
                     <ArrowLeft className="mr-2 h-4 w-4" />
                     Back
                   </Button>
-                  <Button 
-                    onClick={saveProfile} 
+                  <Button
+                    onClick={saveProfile}
                     disabled={loading}
                     className="flex-1"
                   >
@@ -805,5 +805,19 @@ export default function ProfileSetupPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ProfileSetupPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <ProfileSetupContent />
+    </Suspense>
   );
 }

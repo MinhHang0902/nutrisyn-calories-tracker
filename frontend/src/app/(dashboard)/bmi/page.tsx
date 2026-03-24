@@ -166,7 +166,7 @@ export default function BMICalculatorPage() {
                     <Activity className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">BMI</span>
                   </div>
-                  <p className="text-4xl font-bold">{formatNumber(results.bmi.toFixed(1))}</p>
+                  <p className="text-4xl font-bold">{formatNumber(Number(results.bmi.toFixed(1)))}</p>
                   <p className={`text-lg font-medium mt-2 ${getBMIColor(results.category)}`}>
                     {results.category}
                   </p>

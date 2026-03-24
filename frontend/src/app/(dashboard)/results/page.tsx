@@ -1,12 +1,13 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { CheckCircle, XCircle, AlertTriangle, ArrowLeft, Camera } from "lucide-react";
 
-export default function ResultsPage() {
+function ResultsContent() {
   const searchParams = useSearchParams();
   const score = searchParams.get("score") || "good";
   const calories = searchParams.get("calories") || "0";
@@ -104,5 +105,13 @@ export default function ResultsPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function ResultsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen py-12" />}>
+      <ResultsContent />
+    </Suspense>
   );
 }

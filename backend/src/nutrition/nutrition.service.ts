@@ -2,6 +2,7 @@ import { Injectable, HttpException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import FormData = require('form-data');
 
 @Injectable()
 export class NutritionService {
@@ -17,17 +18,21 @@ export class NutritionService {
   async analyzeImage(file: Express.Multer.File) {
     try {
       const formData = new FormData();
-      const blob = new Blob([file.buffer], { type: file.mimetype });
-      formData.append('file', blob, file.originalname);
+      formData.append('file', file.buffer, {
+        filename: file.originalname,
+        contentType: file.mimetype,
+      });
 
       const response = await firstValueFrom(
         this.httpService.post(`${this.aiServiceUrl}/api/analyze`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+          headers: formData.getHeaders(),
         })
       );
       return response.data;
     } catch (error) {
-      throw new HttpException('AI analysis failed', 500);
+      console.log('AI analysis error:', error?.response?.data || error.message);
+      const message = error?.response?.data?.detail || 'AI analysis failed';
+      throw new HttpException(message, error?.response?.status || 500);
     }
   }
 

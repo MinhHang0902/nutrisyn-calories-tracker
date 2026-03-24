@@ -40,7 +40,7 @@ export const authAPI = {
 
 export const userAPI = {
   getProfile: () => api.get("/users/profile"),
-  updateProfile: (data: { name?: string; avatar?: string; currentPassword?: string; newPassword?: string }) => 
+  updateProfile: (data: { name?: string; avatar?: string; currentPassword?: string; newPassword?: string }) =>
     api.put("/users/profile", data),
 };
 

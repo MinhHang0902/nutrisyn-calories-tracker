@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,10 +101,12 @@ export default function SettingsPage() {
               <div className="relative">
                 <div className="h-24 w-24 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
                   {avatarPreview ? (
-                    <img
+                    <Image
                       src={avatarPreview}
                       alt="Avatar"
-                      className="h-full w-full object-cover"
+                      fill
+                      sizes="96px"
+                      className="object-cover"
                     />
                   ) : (
                     <User className="h-12 w-12 text-primary" />

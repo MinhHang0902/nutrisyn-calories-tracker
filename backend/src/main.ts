@@ -5,9 +5,9 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
-  // app.setGlobalPrefix('api');
-  
+
+  app.setGlobalPrefix('api');
+
   app.enableCors({
     origin: ['http://localhost:3000', 'http://localhost:3001'],
     credentials: true,
@@ -24,7 +24,7 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  
+
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 

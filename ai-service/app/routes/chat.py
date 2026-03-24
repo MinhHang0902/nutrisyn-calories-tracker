@@ -9,6 +9,9 @@ load_dotenv()
 
 router = APIRouter()
 
+GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", GEMINI_MODEL)
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -98,7 +101,7 @@ async def generate_response(user_message: str, context: Optional[Dict[str, Any]]
     try:
         prompt = build_prompt(user_message, context, history)
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel(GEMINI_MODEL)
         response = model.generate_content(
             prompt,
             generation_config={

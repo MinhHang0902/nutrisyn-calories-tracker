@@ -10,6 +10,8 @@ load_dotenv()
 
 from app.routes import nutrition, chat, meal_plan
 
+GEMINI_MODEL = "gemini-2.0-flash"
+
 app = FastAPI(
     title="NutriSyn AI Service",
     description="AI-powered nutrition analysis and meal planning",
@@ -51,7 +53,7 @@ async def test_gemini():
     
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel(GEMINI_MODEL)
         response = model.generate_content("Say OK if you receive this")
         return {"status": "success", "message": response.text}
     except Exception as e:
