@@ -5,19 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { Camera, User, Loader2 } from "lucide-react";
 import { useUserProfileStore } from "@/stores";
-import { nutritionAPI, mealAPI, profileAPI } from "@/lib/api";
-import { formatCalories, formatMacro } from "@/lib/utils";
-import { Camera, Search, CalendarDays, User, Loader2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { mealAPI, profileAPI } from "@/lib/api";
+import { formatCalories } from "@/lib/utils";
 import {
   DailySummaryCard,
-  SmartAlert,
   MealRecommendation,
   WeightTracker,
   NutritionGoals,
-  NutritionGauge,
 } from "@/components/smart";
 
 export default function DashboardPage() {
@@ -49,21 +45,8 @@ export default function DashboardPage() {
         setLastMealTime(meals[0].createdAt);
       }
 
-      const today = new Date().toISOString().split("T")[0];
-      const todayMeals = meals.filter((meal: any) => 
-        meal.createdAt && meal.createdAt.startsWith(today)
-      );
-
-      const totals = todayMeals.reduce(
-        (acc: any, meal: any) => ({
-          calories: acc.calories + (meal.totalCalories || 0),
-          protein: acc.protein + (meal.totalProtein || 0),
-          carbs: acc.carbs + (meal.totalCarbs || 0),
-          fat: acc.fat + (meal.totalFat || 0),
-        }),
-        { calories: 0, protein: 0, carbs: 0, fat: 0 }
-      );
-      updateTodayNutrition(totals);
+      const totalsRes = await mealAPI.getTodayTotals();
+      updateTodayNutrition(totalsRes.data);
     } catch (error) {
       console.error("Failed to fetch dashboard data:", error);
     } finally {
@@ -73,11 +56,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
 
-  const calorieProgress = profile
-    ? (todayNutrition.calories / profile.calorieTarget) * 100
-    : 0;
+    const handleFocus = () => {
+      fetchData();
+    };
+
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [fetchData]);
 
   const targets = profile
     ? {
@@ -186,64 +175,6 @@ export default function DashboardPage() {
           }
         />
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Progress Tracker</CardTitle>
-          <CardDescription>Track your daily macro intake</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="font-medium">Calories</span>
-                <span className="text-muted-foreground">
-                  {formatCalories(todayNutrition.calories)} / {formatCalories(targets.calories)} kcal
-                </span>
-              </div>
-              <Progress 
-                value={Math.min(calorieProgress, 100)} 
-                className="h-3"
-              />
-            </div>
-
-            <div className="grid grid-cols-4 justify-items-center pt-2">
-              <NutritionGauge
-                label="Protein"
-                current={nutrition.protein}
-                target={targets.protein}
-                unit="g"
-                color="protein"
-                size="md"
-              />
-              <NutritionGauge
-                label="Carbs"
-                current={nutrition.carbs}
-                target={targets.carbs}
-                unit="g"
-                color="carbs"
-                size="md"
-              />
-              <NutritionGauge
-                label="Fat"
-                current={nutrition.fat}
-                target={targets.fat}
-                unit="g"
-                color="fat"
-                size="md"
-              />
-              <NutritionGauge
-                label="Calories"
-                current={nutrition.calories}
-                target={targets.calories}
-                unit="kcal"
-                color="calories"
-                size="md"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

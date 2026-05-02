@@ -58,6 +58,7 @@ export const profileAPI = {
 
 export const mealAPI = {
   getMeals: (date?: string) => api.get("/meals", { params: { date } }),
+  getTodayTotals: () => api.get("/meals/today"),
   getMeal: (id: string) => api.get(`/meals/${id}`),
   createMeal: (data: FormData) =>
     api.post("/meals", data, {

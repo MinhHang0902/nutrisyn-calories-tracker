@@ -1,0 +1,750 @@
+# NutriSyn Calories Tracker - Tài Liệu Tính Năng Dự Án
+
+================================================================================
+TỔNG QUAN DỰ ÁN
+================================================================================
+
+NutriSyn là ứng dụng theo dõi calo và dinh dưỡng thông minh sử dụng AI (Google Gemini) để phân tích ảnh món ăn, tư vấn dinh dưỡng và lập kế hoạch bữa ăn.
+
+KIẾN TRÚC 3 LỚP:
+  - Frontend (Next.js 14)       → Port 3000
+  - Backend API (NestJS)        → Port 3001
+  - AI Service (Python FastAPI) → Port 8000
+  - Database: PostgreSQL
+
+================================================================================
+DANH SÁCH TÍNH NĂNG CHI TIẾT
+================================================================================
+
+------------------------------------------------------------------------------
+1. ĐĂNG KÝ / ĐĂNG NHẬP (AUTHENTICATION)
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(auth)/login/page.tsx
+  - src/app/(auth)/register/page.tsx
+  - src/lib/validations/index.ts (Zod schema: loginSchema, registerSchema)
+
+File backend:
+  - src/auth/auth.controller.ts
+  - src/auth/auth.service.ts
+  - src/auth/jwt.strategy.ts
+  - src/auth/jwt-auth.guard.ts
+  - src/auth/dto/auth.dto.ts
+
+API Endpoints:
+  - POST /api/auth/register  (email, password, name) → Tạo tài khoản mới
+  - POST /api/auth/login     (email, password)       → Đăng nhập
+  - GET  /api/auth/me        (Bearer token)          → Lấy thông tin user hiện tại
+
+Cách hoạt động:
+  1. Người dùng nhập email + password (+ name khi đăng ký)
+  2. Frontend validate bằng Zod schema (email hợp lệ, password tối thiểu 6 ký tự,
+     confirm password phải khớp)
+  3. Gửi request đến backend NestJS
+  4. Backend kiểm tra email trùng, hash password bằng bcrypt (salt=10)
+  5. Tạo JWT token với payload {sub: userId, email}, thời hạn 7 ngày
+  6. Frontend lưu token vào localStorage + Zustand store
+  7. Sau khi đăng nhập:
+     - Nếu chưa có profile → Chuyển đến trang profile-setup
+     - Nếu đã có profile → Chuyển đến dashboard
+  8. Mỗi request sau đó được gắn Bearer token qua Axios interceptor
+  9. Nếu token hết hạn (401) → Tự động xóa token và redirect về /login
+
+------------------------------------------------------------------------------
+2. THIẾT LẬP HỒ SƠ CÁ NHÂN (PROFILE SETUP)
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/profile-setup/page.tsx
+
+File backend:
+  - src/profile/profile.controller.ts
+  - src/profile/profile.service.ts
+  - src/profile/entities/user-profile.entity.ts
+
+API Endpoints:
+  - GET  /api/profile                → Lấy thông tin profile
+  - PUT  /api/profile                → Cập nhật từng phần
+  - PUT  /api/profile/body-metrics   → Cập nhật toàn bộ chỉ số cơ thể
+
+Cách hoạt động:
+  Trang này có 2 chế độ:
+
+  CHẾ ĐỘ 1 - Lần đầu thiết lập (chưa có profile):
+    Step 1: Form nhập thông tin:
+      - Giới tính (male / female)
+      - Tuổi (age)
+      - Chiều cao (cm)
+      - Cân nặng (kg)
+      - Mức độ hoạt động:
+          * Sedentary (ít vận động)
+          * Lightly Active (vận động nhẹ)
+          * Moderately Active (vận động vừa)
+          * Very Active (vận động nhiều)
+          * Extra Active (vận động rất nhiều)
+      - Mục tiêu:
+          * Lose Weight (giảm cân)
+          * Gain Muscle (tăng cơ)
+          * Maintain (duy trì)
+
+    Step 2: Backend tự động tính toán và hiển thị kết quả:
+      - BMI = weight / (height_m)^2
+      - BMR (Mifflin-St Jeor):
+          * Nam:   10×W + 6.25×H - 5×A + 5
+          * Nữ:    10×W + 6.25×H - 5×A - 161
+      - TDEE = BMR × hệ số hoạt động:
+          * Sedentary: 1.2
+          * Lightly Active: 1.375
+          * Moderately Active: 1.55
+          * Very Active: 1.725
+          * Extra Active: 1.9
+      - Calorie Target:
+          * Lose Weight: TDEE - 500
+          * Gain Muscle: TDEE + 500
+          * Maintain: TDEE
+      - Macro Targets (protein, carbs, fat) tính theo mục tiêu:
+          * Lose Weight:   protein 1.8g/kg, fat 25% calo, carbs phần còn lại
+          * Gain Muscle:   protein 2.2g/kg, fat 25% calo, carbs phần còn lại
+          * Maintain:      protein 1.2g/kg, fat 30% calo, carbs phần còn lại
+
+    Step 3: Người dùng nhấn Save → Lưu profile vào database
+
+  CHẾ ĐỘ 2 - Đã có profile (chỉnh sửa):
+    - Hiển thị card thông tin với tất cả chỉ số (BMI, BMR, TDEE, calorie target, macros)
+    - Nút "Update Profile" cho phép quay lại form chỉnh sửa
+    - Có nút "Back to Dashboard"
+
+  Animation: Chuyển đổi giữa các step dùng Framer Motion (AnimatePresence)
+
+------------------------------------------------------------------------------
+3. DASHBOARD - TRANG TỔNG QUAN
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/dashboard/page.tsx
+  - src/app/(dashboard)/layout.tsx (sidebar layout)
+  - src/components/smart/DailySummaryCard.tsx
+  - src/components/smart/NutritionGoals.tsx
+  - src/components/smart/WeightTracker.tsx
+  - src/components/smart/SmartAlert.tsx (MealRecommendation)
+
+Cách hoạt động:
+  Dashboard là trang trung tâm hiển thị toàn bộ thông tin dinh dưỡng trong ngày.
+
+  A. Profile Setup Prompt:
+     - Nếu user chưa thiết lập profile → Hiển thị card nhắc nhở với nút
+       "Set Up Now" (đến profile-setup) hoặc "Skip for Now" (đến nutriscan)
+
+  B. Daily Summary Card:
+     - Hiển thị tổng calo đã ăn hôm nay với số lớn (animated counter)
+     - Progress bar thể hiện tiến độ so với calorie target
+     - Trạng thái:
+         * Just Started  (< 50% target)
+         * On Track      (50-90% target)
+         * Almost There  (90-100% target)
+         * Over Target   (> 100% target)
+     - 4 ô nhỏ hiển thị: Protein (g), Carbs (g), Fat (g), Calo còn lại
+     - Hiển thị thời gian bữa ăn gần nhất
+     - Dữ liệu được tính bằng cách:
+         1. Gọi API GET /api/meals lấy danh sách tất cả bữa ăn
+         2. Lọc các bữa ăn có createdAt trùng ngày hôm nay
+         3. Cộng dồn totalCalories, totalProtein, totalCarbs, totalFat
+         4. Cập nhật vào Zustand store (todayNutrition)
+     - Tự động refresh khi user quay lại tab (window focus event)
+
+  C. Meal Recommendation:
+     - Hiển thị gợi ý bữa ăn tiếp theo dựa trên tình trạng dinh dưỡng hiện tại
+     - Rule-based:
+         * Calo >= 100% target: "Đạt mục tiêu, nên ăn nhẹ"
+         * Protein < 50% target: "Thêm ức gà/sữa chua/đậu phụ"
+         * Carbs > 120% target: "Ưu tiên rau xanh và protein nạc"
+         * Fat > 120% target: "Chọn luộc/hấp, tránh chiên xào"
+         * Calo < 50% target: "Thời điểm tốt cho bữa ăn cân bằng"
+     - Có nút dismiss để ẩn
+
+  D. Nutrition Goals:
+     - Hiển thị 4 mục tiêu: Calorie, Protein, Carbs, Fat
+     - Nút "Edit" mở dialog để chỉnh sửa targets
+     - Khi lưu → Gửi PUT /api/profile/body-metrics để cập nhật
+
+  E. Weight Tracker:
+     - Biểu đồ đường (Recharts) hiển thị cân nặng 30 ngày gần nhất
+     - Dữ liệu lưu trong localStorage (key: "nutrisyn_weight_history")
+     - Có nút "Log Weight" để nhập cân nặng mới
+     - Hiển thị xu hướng:
+         * Stable:   Không thay đổi đáng kể (< 0.5kg)
+         * TrendingUp: Tăng cân (đỏ)
+         * TrendingDown: Giảm cân (xanh)
+     - Nếu có goal weight → Hiển thị đường reference line trên biểu đồ
+     - Goal weight tính từ profile:
+         * lose_weight:  current weight - 5kg
+         * gain_muscle:  current weight + 3kg
+
+  F. Recent Meals:
+     - Danh sách 5 bữa ăn gần nhất
+     - Hiển thị: loại bữa ăn (breakfast/lunch/dinner/snack), tên món,
+       tổng calo, đánh giá (Good/Moderate/Exceeds)
+
+  G. Sidebar Navigation (dashboard/layout.tsx):
+     - Responsive: Sidebar cố định trên desktop, hamburger menu trên mobile
+     - 8 mục: Dashboard, My Profile, NutriScan, Nutrition Finder,
+              Meal Planner, BMI Calculator, Chat Advisor, History
+     - User dropdown: Account Settings, Logout
+
+------------------------------------------------------------------------------
+4. NUTRISCAN - QUÉT VÀ PHÂN TÍCH MÓN ĂN BẰNG AI
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/nutriscan/page.tsx
+
+File backend:
+  - src/nutrition/nutrition.controller.ts (proxy)
+  - src/nutrition/nutrition.service.ts (proxy)
+
+File AI Service:
+  - app/routes/nutrition.py
+
+API Flow:
+  Frontend → POST /api/nutrition/analyze (NestJS)
+           → POST /api/analyze (FastAPI AI Service)
+           → Google Gemini 2.0 Flash (Vision API)
+
+Cách hoạt động:
+  1. Người dùng tải lên ảnh món ăn (kéo thả hoặc click chọn)
+     - Hỗ trợ: JPG, PNG, WebP
+     - Dùng react-dropzone cho drag & drop
+
+  2. Ảnh được gửi đến backend NestJS (multipart/form-data)
+
+  3. Backend proxy request đến AI Service (Python FastAPI)
+
+  4. AI Service xử lý:
+     a. Mở ảnh bằng PIL, convert sang RGB
+     b. Gửi ảnh + prompt đến Google Gemini 2.0 Flash Vision
+     c. Gemini phân tích và trả về JSON:
+        {
+          "foods": [
+            {
+              "name": "Tên món (tiếng Anh)",
+              "serving_size": số_gram,
+              "serving_unit": "g" | "ml" | "piece",
+              "calories": số_kcal,
+              "protein": số_gram,
+              "carbohydrates": số_gram,
+              "fat": số_gram,
+              "sugar": số_gram,
+              "fiber": số_gram
+            }
+          ]
+        }
+     d. Tối đa 8 món ăn được nhận diện
+     e. Tính tổng: calories, protein, carbs, fat, sugar, fiber
+     f. Đánh giá score:
+         * good:     <= 800 kcal
+         * moderate: 801-1200 kcal
+         * exceed:   > 1200 kcal
+     g. Tạo recommendations dựa trên rule:
+         * Protein < 20g → "Thêm lean protein"
+         * Carbs > 90g   → "Kết hợp rau không tinh bột"
+         * Fat > 30g     → "Giảm đồ chiên/xào"
+         * Fiber < 6g    → "Thêm rau/các loại hạt/ngũ cốc nguyên cám"
+
+  5. Frontend hiển thị kết quả:
+     - Badge score với icon và màu sắc:
+         * Good: ✓ xanh lá
+         * Moderate: ~ vàng
+         * Exceeds: ! đỏ
+     - Thanh progress bar hiển thị calo so với calorie target
+     - Grid hiển thị: Protein, Carbs, Fat, Fiber
+     - Danh sách từng món ăn với dinh dưỡng chi tiết
+     - Danh sách recommendations
+     - Nút "Save Meal" → Lưu vào database + cập nhật todayNutrition
+
+  6. Khi nhấn "Save Meal":
+     - Tạo FormData chứa: image, foods (JSON), mealType (mặc định "lunch"), score
+     - Gửi POST /api/meals đến backend
+     - Backend tính lại totals từ foods array và lưu vào PostgreSQL
+     - Frontend cập nhật Zustand store (cộng dồn vào todayNutrition)
+     - Toast notification "Meal saved successfully!"
+
+  LỖI THƯỜNG GẶP - 502 Bad Gateway:
+  - Nguyên nhân: AI Service (FastAPI port 8000) không chạy hoặc Gemini API key
+    không được cấu hình
+  - Giải pháp:
+      1. Kiểm tra AI Service đang chạy: curl http://localhost:8000/health
+      2. Kiểm tra .env trong ai-service/ có GEMINI_API_KEY hợp lệ
+      3. Khởi động AI Service: cd ai-service && python main.py
+      4. Kiểm tra Gemini API key: curl http://localhost:8000/test-gemini
+
+------------------------------------------------------------------------------
+5. NUTRITION FINDER - TÌM KIẾM DINH DƯỠNG
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/nutrition-finder/page.tsx
+
+File AI Service:
+  - app/routes/nutrition.py (GET /api/search)
+
+API Endpoints:
+  - GET /api/nutrition/search?q=tên_món&serving_size=...&serving_unit=...
+
+Cách hoạt động:
+  1. Người dùng nhập tên thực phẩm vào ô search
+  2. Gợi ý tự động (auto-complete) khi gõ
+  3. AI Service tìm kiếm theo 2 bước:
+     a. Thử gọi Gemini API để lấy dinh dưỡng chính xác nhất
+     b. Nếu Gemini lỗi → Tìm trong NUTRITION_DB local (25+ món)
+  4. Kết quả hiển thị:
+     - Tên món, serving size (có thể chỉnh), calories
+  5. Click vào kết quả → Mở panel chi tiết với đầy đủ:
+     - Calories (kcal)
+     - Protein (g)
+     - Carbohydrates (g)
+     - Fat (g)
+     - Sugar (g)
+     - Fiber (g)
+     - Sodium (mg)
+     - Calcium (mg)
+     - Iron (mg)
+  6. Tính năng điều chỉnh serving size:
+     - Thanh slider hoặc input để thay đổi lượng ăn
+     - Tất cả macros được tính lại theo tỷ lệ
+  7. Chế độ so sánh (Compare):
+     - Chọn tối đa 4 món ăn
+     - Bảng so sánh side-by-side hiển thị tất cả dinh dưỡng
+     - Dễ dàng thấy sự khác biệt giữa các món
+
+  NUTRITION_DB (local database trong AI Service - 25 món):
+    rice, chicken, beef, pork, salmon, egg, tofu, milk, bread, noodle,
+    pho, salad, tomato, cucumber, carrot, broccoli, potato, banana,
+    apple, orange, avocado, steak, pizza, burger, fries
+
+------------------------------------------------------------------------------
+6. MEAL PLANNER - LẬP KẾ HOẠCH BỮA ĂN
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/meal-planner/page.tsx
+
+File AI Service:
+  - app/routes/meal_plan.py
+
+API Endpoints:
+  - POST /api/nutrition/meal-plan
+    Body: { calories, mealType, cuisine?, ingredients? }
+
+Cách hoạt động:
+  1. Người dùng nhập:
+     - Target calories (số kcal mong muốn cho bữa ăn)
+     - Meal Type: Breakfast / Lunch / Dinner
+     - Cuisine (tùy chọn):
+         * Vietnamese (Phở, Cơm tấm, Bún chả, Bánh mì...)
+         * Asian (Sushi, Fried rice, Pad Thai, Bibimbap...)
+         * Mediterranean (Greek salad, Grilled fish, Hummus wrap...)
+         * Western (Pasta, Grilled chicken, Oatmeal...)
+     - Preferred ingredients (tùy chọn): danh sách nguyên liệu ưa thích
+
+  2. AI Service xử lý:
+     a. Chọn template theo cuisine + mealType
+     b. Mỗi category có 3-4 mẫu bữa ăn với foods và base calories
+     c. Tính scale factor = target_calories / base_calories
+     d. Scale tất cả macros theo tỷ lệ
+     e. Random chọn 3 bữa ăn phù hợp
+     f. Thêm cooking instructions cơ bản
+
+  3. Frontend hiển thị:
+     - Tổng calories của plan
+     - Danh sách 3 bữa ăn với:
+         * Tên bữa ăn
+         * Danh sách món + dinh dưỡng từng món
+         * Tổng calo mỗi bữa
+         * Hướng dẫn nấu cơ bản
+
+------------------------------------------------------------------------------
+7. BMI CALCULATOR - TÍNH CHỈ SỐ BMI
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/bmi/page.tsx
+  - src/lib/utils.ts (calculateBMI, calculateBMR, calculateTDEE, getBMICategory)
+
+Cách hoạt động:
+  1. Người dùng nhập:
+     - Cân nặng (kg)
+     - Chiều cao (cm)
+     - Tuổi
+     - Giới tính (Nam/Nữ)
+     - Mức độ hoạt động (5 level)
+
+  2. Tính toán client-side (không gọi API):
+     - BMI = weight / (height_m)^2
+     - BMR (Mifflin-St Jeor)
+     - TDEE = BMR × activity multiplier
+
+  3. Hiển thị kết quả:
+     - BMI với màu sắc theo category:
+         * Underweight (< 18.5): Xanh dương
+         * Normal (18.5 - 24.9): Xanh lá
+         * Overweight (25 - 29.9): Vàng
+         * Obese (>= 30): Đỏ
+     - BMR (Basal Metabolic Rate)
+     - TDEE (Total Daily Energy Expenditure)
+     - Khuyến nghị calo hàng ngày cho 3 mục tiêu:
+         * Giảm cân: TDEE - 500
+         * Duy trì: TDEE
+         * Tăng cân: TDEE + 500
+
+------------------------------------------------------------------------------
+8. CHAT ADVISOR - TRÒ CHUYỆN VỚI AI VỀ DINH DƯỠNG
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/chat/page.tsx
+
+File backend:
+  - src/chat/chat.controller.ts
+  - src/chat/chat.service.ts
+  - src/chat/entities/chat-history.entity.ts
+
+File AI Service:
+  - app/routes/chat.py
+
+API Endpoints:
+  - POST /api/chat/message  (message, context?)
+  - GET  /api/chat/history
+
+Cách hoạt động:
+  1. Frontend load lịch sử chat (GET /api/chat/history, 50 tin gần nhất)
+
+  2. Người dùng nhập câu hỏi vào ô chat
+
+  3. Frontend gửi message kèm context:
+     - calorieTarget
+     - todayCalories, todayProtein, todayCarbs, todayFat
+     - goal (lose_weight / gain_muscle / maintain)
+
+  4. Backend lưu user message vào database, proxy đến AI Service
+
+  5. AI Service xử lý:
+     a. SYSTEM_PROMPT cấu hình Gemini làm chuyên gia dinh dưỡng:
+        - Đếm calo, quản lý cân nặng, macros, lập kế hoạch bữa ăn,
+          đọc nhãn thực phẩm
+     b. Build prompt gồm:
+        - Nutrition context của user (targets, today's intake, goal)
+        - 5 tin nhắn gần nhất trong lịch sử (để có context hội thoại)
+        - Câu hỏi mới của user
+     c. Gemini tạo phản hồi
+     d. Nếu Gemini lỗi → Fallback response dựa trên keyword:
+        - "protein" → lời khuyên về protein
+        - "calorie/weight" → lời khuyên về calo
+        - "lose weight" → lời khuyên giảm cân
+        - "gain muscle" → lời khuyên tăng cơ
+
+  6. Frontend hiển thị:
+     - Tin nhắn user: căn phải
+     - Tin nhắn AI: căn trái, render Markdown (ReactMarkdown + remarkGfm)
+     - Timestamp: "2 minutes ago", "1 hour ago" (date-fns formatDistanceToNow)
+
+  7. Lưu lịch sử:
+     - Backend lưu cả user message + assistant message vào bảng chat_history
+
+------------------------------------------------------------------------------
+9. HISTORY - LỊCH SỬ BỮA ĂN
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/history/page.tsx
+
+File backend:
+  - src/meals/meals.controller.ts
+  - src/meals/meals.service.ts
+  - src/meals/entities/meal.entity.ts
+
+API Endpoints:
+  - GET    /api/meals?date=YYYY-MM-DD  → Lấy bữa ăn (lọc theo ngày)
+  - GET    /api/meals/today            → Tổng dinh dưỡng hôm nay
+  - GET    /api/meals/:id              → Chi tiết 1 bữa ăn
+  - DELETE /api/meals/:id              → Xóa bữa ăn
+
+Cách hoạt động:
+  1. Frontend load tất cả bữa ăn của user (GET /api/meals)
+  2. Hiển thị trong bảng TanStack Table với:
+     - Sorting (sắp xếp theo cột)
+     - Pagination (phân trang)
+     - Global filter (tìm kiếm toàn bảng)
+  3. Bộ lọc thời gian:
+     - All Time: Tất cả bữa ăn
+     - Today: Hôm nay
+     - This Week: Tuần này
+     - This Month: Tháng này
+  4. Cột trong bảng:
+     - Date: Ngày tạo (định dạng dd/MM/yyyy)
+     - Meal Type: breakfast/lunch/dinner/snack (viết hoa chữ đầu)
+     - Foods: Tên các món (cách nhau bởi dấu phẩy)
+     - Calories, Protein, Carbs, Fat: Số liệu dinh dưỡng
+     - Score: Badge màu sắc
+         * Good: Xanh lá
+         * Moderate: Vàng
+         * Exceeds: Đỏ
+     - Actions: Nút xóa bữa ăn
+  5. Xóa bữa ăn:
+     - Confirm trước khi xóa
+     - Gọi DELETE /api/meals/:id
+     - Toast "Meal deleted"
+     - Reload danh sách
+
+------------------------------------------------------------------------------
+10. ACCOUNT SETTINGS - CÀI ĐẶT TÀI KHOẢN
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/settings/page.tsx
+  - src/app/(dashboard)/account-settings/page.tsx
+
+File backend:
+  - src/users/users.controller.ts
+  - src/users/users.service.ts
+  - src/users/entities/user.entity.ts
+
+API Endpoints:
+  - GET /api/users/profile  → Lấy thông tin user
+  - PUT /api/users/profile  → Cập nhật thông tin
+
+Cách hoạt động:
+  Form cho phép:
+  1. Upload avatar:
+     - Chọn ảnh từ máy
+     - Preview ảnh trước khi lưu
+     - Gửi lên server (lưu URL vào avatar field)
+  2. Đổi tên hiển thị (display name)
+  3. Xem email (read-only, không sửa được)
+  4. Đổi mật khẩu:
+     - Nhập mật khẩu hiện tại
+     - Nhập mật khẩu mới
+     - Xác nhận mật khẩu mới
+     - Backend kiểm tra mật khẩu hiện tại đúng trước khi đổi mới
+
+------------------------------------------------------------------------------
+11. RESULTS PAGE - TRANG KẾT QUẢ
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/(dashboard)/results/page.tsx
+
+Cách hoạt động:
+  - Nhận dữ liệu qua URL query params: score, calories, protein, carbs, fat
+  - Hiển thị kết quả phân tích với icon và màu sắc theo score
+  - Nút quay về Dashboard hoặc tiếp tục quét món ăn mới
+  - (Trang này ít được dùng vì NutriScan hiển thị kết quả trực tiếp)
+
+------------------------------------------------------------------------------
+12. TRANG CHỦ (LANDING PAGE)
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/page.tsx
+
+Cách hoạt động:
+  Trang landing giới thiệu ứng dụng với:
+  - Hero section: "Smart Nutrition, AI Powered"
+  - 6 Feature cards:
+      1. NutriScan - Quét ảnh món ăn bằng AI
+      2. Nutrition Finder - Tìm kiếm dinh dưỡng thực phẩm
+      3. Meal Planner - Lập kế hoạch bữa ăn
+      4. BMI Calculator - Tính chỉ số BMI
+      5. Chat Advisor - Tư vấn dinh dưỡng AI
+      6. History - Lịch sử bữa ăn
+  - CTA (Call-to-Action): "Get Started" → /register
+  - Footer
+
+------------------------------------------------------------------------------
+13. HƯỚNG DẪN SỬ DỤNG (HOW TO USE)
+------------------------------------------------------------------------------
+
+File frontend:
+  - src/app/how-to-use/page.tsx
+
+Cách hoạt động:
+  - Trang hướng dẫn 6 bước:
+      1. Create Account - Tạo tài khoản
+      2. Set Goals - Thiết lập mục tiêu (profile setup)
+      3. Scan Meals - Quét món ăn bằng NutriScan
+      4. Track Progress - Theo dõi tiến trình trên Dashboard
+      5. Get AI Advice - Nhận tư vấn từ Chat Advisor
+      6. Plan Meals - Lập kế hoạch bữa ăn
+
+================================================================================
+CƠ SỞ DỮ LIỆU (DATABASE)
+================================================================================
+
+Database: PostgreSQL
+6 bảng chính:
+
+1. users
+   - id (UUID, primary key)
+   - email (unique)
+   - password (bcrypt hashed)
+   - name
+   - avatar (nullable)
+   - created_at
+
+2. user_profiles
+   - id (UUID, primary key)
+   - user_id (FK → users)
+   - age, gender, height, weight
+   - activity_level (enum: sedentary, lightly_active, moderately_active,
+                     very_active, extra_active)
+   - goal (enum: lose_weight, gain_muscle, maintain)
+   - bmi, bmr, tdee
+   - calorie_target, protein_target, carbs_target, fat_target
+   - updated_at
+
+3. meals
+   - id (UUID, primary key)
+   - user_id (FK → users)
+   - image_url (nullable)
+   - foods (JSONB array) - Lưu danh sách món với đầy đủ dinh dưỡng
+   - total_calories, total_protein, total_carbs, total_fat
+   - meal_type (breakfast/lunch/dinner/snack)
+   - score (good/moderate/exceed)
+   - created_at
+
+4. chat_history
+   - id (UUID, primary key)
+   - user_id (FK → users)
+   - user_message (text)
+   - assistant_message (text)
+   - created_at
+
+5. nutrition_data
+   - id (UUID, primary key)
+   - name, serving_size, serving_unit
+   - calories, protein, carbohydrates, fat, sugar, fiber, sodium, calcium, iron
+   - unique constraint: (name, serving_size, serving_unit)
+   - 41 dòng dữ liệu mẫu
+
+6. Indexes:
+   - meals(user_id), meals(created_at)
+   - chat_history(user_id)
+   - user_profiles(user_id)
+   - nutrition_data(name)
+
+================================================================================
+QUẢN LÝ STATE (FRONTEND)
+================================================================================
+
+Zustand stores (2 stores):
+
+1. useAuthStore (persist → localStorage: "auth-storage"):
+   - user: { id, email, name, avatar }
+   - token: JWT string
+   - isAuthenticated: boolean
+   - Actions: setAuth, setUser, logout
+
+2. useUserProfileStore (persist → localStorage: "user-profile-storage"):
+   - profile: UserProfile object
+   - todayNutrition: { calories, protein, carbs, fat }
+   - Actions: setProfile, updateProfile, updateTodayNutrition
+
+================================================================================
+CÁC THƯ VIỆN CHÍNH
+================================================================================
+
+Frontend:
+  - Next.js 14 (App Router)
+  - React 18
+  - Tailwind CSS + shadcn/ui
+  - Zustand (state management)
+  - Axios (HTTP client)
+  - Zod (form validation)
+  - Framer Motion (animation)
+  - Chart.js / react-chartjs-2 (gauge chart)
+  - Recharts (weight tracker line chart)
+  - react-spring (animated counters)
+  - react-dropzone (drag & drop upload)
+  - TanStack Table (data table)
+  - ReactMarkdown + remarkGfm (render Markdown trong chat)
+  - date-fns (date formatting)
+  - Sonner (toast notifications)
+  - lucide-react (icons)
+
+Backend:
+  - NestJS
+  - TypeORM (PostgreSQL)
+  - Passport + JWT (authentication)
+  - bcrypt (password hashing)
+  - Swagger (API documentation tại /api/docs)
+  - @nestjs/axios (HTTP client proxy đến AI Service)
+
+AI Service:
+  - FastAPI (Python)
+  - google-generativeai (Gemini API)
+  - Pillow (image processing)
+  - python-dotenv
+
+================================================================================
+LUỒNG DỮ LIỆU CHÍNH: QUÉT MÓN ĂN
+================================================================================
+
+1. User upload ảnh trên NutriScan page
+2. Frontend → POST /api/nutrition/analyze (multipart/form-data)
+3. NestJS backend → proxy → POST http://localhost:8000/api/analyze
+4. AI Service:
+   a. Mở ảnh bằng PIL → convert RGB
+   b. Gửi ảnh + prompt → Gemini 2.0 Flash Vision API
+   c. Parse JSON response → chuẩn hóa dữ liệu
+   d. Tính tổng dinh dưỡng + score + recommendations
+   e. Trả về JSON cho backend
+5. Backend trả kết quả cho frontend
+6. Frontend hiển thị kết quả phân tích
+7. User nhấn "Save Meal"
+8. Frontend → POST /api/meals (FormData: image, foods JSON, mealType, score)
+9. Backend:
+   a. Parse foods từ JSON string
+   b. Tính lại totals từ foods array
+   c. Lưu ảnh vào /uploads/
+   d. Lưu meal vào PostgreSQL (meals table)
+10. Frontend:
+    a. Cập nhật Zustand store (todayNutrition += meal totals)
+    b. Toast "Meal saved successfully!"
+11. Dashboard tự động cập nhật khi user quay lại (window focus event)
+
+================================================================================
+CÁC VẤN ĐỀ CẦN LƯU Ý
+================================================================================
+
+1. AI Service 502 Bad Gateway:
+   - Nguyên nhân: AI Service không chạy hoặc thiếu GEMINI_API_KEY
+   - Khắc phục: Kiểm tra .env, khởi động AI service
+
+2. Không có real-time update:
+   - Không dùng WebSocket/SSE
+   - Dashboard chỉ fetch data khi mount và khi window focus
+   - Nếu user mở 2 tab, dữ liệu không đồng bộ giữa 2 tab
+
+3. Meal type mặc định:
+   - NutriScan luôn lưu mealType = "lunch" (hardcoded)
+   - Không có UI để chọn meal type khi lưu
+
+4. Avatar upload:
+   - Frontend có UI upload avatar nhưng backend chưa xử lý file upload
+   - Chỉ lưu URL, chưa có endpoint upload file
+
+5. Weight Tracker:
+   - Dữ liệu lưu localStorage, không đồng bộ với server
+   - Nếu user xóa browser data → mất lịch sử cân nặng
+
+6. Meal Planner:
+   - Dùng template có sẵn, không gọi Gemini để tạo plan thông minh
+   - Chỉ random chọn từ template, không cá nhân hóa theo user preferences
+
+7. Nutrition Finder:
+   - Gemini API được gọi mỗi lần search (có thể chậm)
+   - Local DB fallback chỉ có 25 món
+
+================================================================================
+KẾT THÚC TÀI LIỆU
+================================================================================
