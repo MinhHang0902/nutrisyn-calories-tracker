@@ -74,7 +74,7 @@ export default function NutriScanPage() {
       updateTodayNutrition({
         calories: todayNutrition.calories + analysis.total.calories,
         protein: todayNutrition.protein + analysis.total.protein,
-        carbs: todayNutrition.carbs + analysis.total.carbs,
+        carbs: todayNutrition.carbs + (analysis.total as any).carbohydrates,
         fat: todayNutrition.fat + analysis.total.fat,
       });
       toast.success("Meal saved successfully!");
@@ -241,7 +241,7 @@ export default function NutriScanPage() {
                     <p className="text-xs text-muted-foreground">Protein</p>
                   </div>
                   <div className="text-center p-3 rounded-lg bg-muted">
-                    <p className="text-2xl font-bold">{formatMacro(analysis.total.carbs)}</p>
+                    <p className="text-2xl font-bold">{formatMacro((analysis.total as any).carbohydrates)}</p>
                     <p className="text-xs text-muted-foreground">Carbs</p>
                   </div>
                   <div className="text-center p-3 rounded-lg bg-muted">
