@@ -422,43 +422,70 @@ File AI Service:
   - app/routes/chat.py
 
 API Endpoints:
-  - POST /api/chat/message  (message, context?)
-  - GET  /api/chat/history
+  - POST /api/chat/message  (message, sessionId, context?)
+  - GET  /api/chat/history                → Danh sách sessions đã nhóm
+  - GET  /api/chat/history/:sessionId     → Chi tiết 1 session
+  - DELETE /api/chat/history/:sessionId   → Xóa toàn bộ session
 
 Cách hoạt động:
-  1. Frontend load lịch sử chat (GET /api/chat/history, 50 tin gần nhất)
+  1. Khi mở trang Chat Advisor → Luôn bắt đầu với cuộc trò chuyện mới (New Chat)
+     - Tự động tạo sessionId cho mỗi session mới
+     - Không tự động load lịch sử chat cũ
+     - Hiển thị màn hình chào trống với gợi ý câu hỏi
 
   2. Người dùng nhập câu hỏi vào ô chat
+     - Frontend gửi message kèm sessionId và context:
+         * sessionId: Định danh duy nhất cho cuộc trò chuyện
+         * calorieTarget, todayCalories, todayProtein, todayCarbs, todayFat
+         * goal (lose_weight / gain_muscle / maintain)
 
-  3. Frontend gửi message kèm context:
-     - calorieTarget
-     - todayCalories, todayProtein, todayCarbs, todayFat
-     - goal (lose_weight / gain_muscle / maintain)
+  3. Backend lưu user message vào database với sessionId, proxy đến AI Service
+     - Mỗi cặp Q&A được lưu với cùng sessionId
+     - Các tin nhắn cùng sessionId sẽ được nhóm thành 1 cuộc trò chuyện
 
-  4. Backend lưu user message vào database, proxy đến AI Service
+  4. AI Service xử lý:
+     a. SYSTEM_PROMPT cấu hình Gemini làm chuyên gia dinh dưỡng
+     b. Build prompt gồm nutrition context + 5 tin gần nhất + câu hỏi mới
+     c. Gemini tạo phản hồi → Lưu vào DB cùng sessionId
 
-  5. AI Service xử lý:
-     a. SYSTEM_PROMPT cấu hình Gemini làm chuyên gia dinh dưỡng:
-        - Đếm calo, quản lý cân nặng, macros, lập kế hoạch bữa ăn,
-          đọc nhãn thực phẩm
-     b. Build prompt gồm:
-        - Nutrition context của user (targets, today's intake, goal)
-        - 5 tin nhắn gần nhất trong lịch sử (để có context hội thoại)
-        - Câu hỏi mới của user
-     c. Gemini tạo phản hồi
-     d. Nếu Gemini lỗi → Fallback response dựa trên keyword:
-        - "protein" → lời khuyên về protein
-        - "calorie/weight" → lời khuyên về calo
-        - "lose weight" → lời khuyên giảm cân
-        - "gain muscle" → lời khuyên tăng cơ
+  5. Giới hạn 15 câu hỏi / session:
+     - Hiển thị bộ đếm "X messages remaining" ở đầu trang
+     - Sau 15 câu hỏi (30 tin nhắn user + AI) → Hiện dialog cảnh báo tiếng Anh:
+       "The chat has reached its length limit. Please start a new conversation
+        for more accurate answers."
+     - Input bị vô hiệu hóa khi đạt giới hạn
+     - Nút "Stay Here" hoặc "New Chat"
 
   6. Frontend hiển thị:
-     - Tin nhắn user: căn phải
-     - Tin nhắn AI: căn trái, render Markdown (ReactMarkdown + remarkGfm)
-     - Timestamp: "2 minutes ago", "1 hour ago" (date-fns formatDistanceToNow)
+     - Tin nhắn user: căn phải, tin AI: căn trái, render Markdown
+     - Header có 2 nút: "History" (xem lịch sử) và "New Chat" (tạo mới)
+     - Dùng formatDate() helper để xử lý null/invalid date, tránh crash
 
-  7. Lưu lịch sử:
-     - Backend lưu cả user message + assistant message vào bảng chat_history
+  7. History Dialog (nhóm theo session):
+     - Click "History" → Mở dialog hiển thị danh sách các cuộc trò chuyện
+     - Backend nhóm tin nhắn theo sessionId, trả về:
+         * sessionId, messageCount, firstMessage, lastMessage
+         * createdAt, updatedAt, messages[]
+     - Mỗi session trong danh sách hiển thị:
+         * Thời gian cập nhật cuối
+         * Số lượng messages (ví dụ: "5 messages")
+         * Preview: câu hỏi đầu tiên + câu trả lời cuối
+     - Click vào session → Xem CHI TIẾT toàn bộ đoạn chat trong cùng dialog:
+         * Hiển thị header với số tin nhắn + thời gian tạo
+         * Nút "Back" để quay lại danh sách
+     - Icon xóa (Trash2) ở góc phải mỗi session (hiện khi hover):
+         * Xóa toàn bộ session khỏi database
+         * API: DELETE /api/chat/history/:sessionId
+         * Toast: "Conversation deleted"
+
+  8. New Chat:
+     - Tạo sessionId mới (format: session_TIMESTAMP_random)
+     - Xóa màn hình chat hiện tại, bắt đầu session mới
+
+  9. Lưu lịch sử:
+     - Bảng chat_history có cột sessionId để nhóm tin nhắn cùng session
+     - API GET /api/chat/history → Danh sách sessions đã nhóm
+     - API GET /api/chat/history/:sessionId → Chi tiết 1 session
 
 ------------------------------------------------------------------------------
 9. HISTORY - LỊCH SỬ BỮA ĂN
@@ -626,7 +653,11 @@ Database: PostgreSQL
    - user_id (FK → users)
    - user_message (text)
    - assistant_message (text)
+   - session_id (nullable, dùng để nhóm tin nhắn cùng session)
    - created_at
+   - Backend grouping: getHistory() nhóm records theo sessionId,
+     trả về session summaries với messageCount, firstMessage,
+     lastMessage, messages[]
 
 5. nutrition_data
    - id (UUID, primary key)

@@ -14,6 +14,9 @@ export class ChatHistory {
   @Column()
   userId: string;
 
+  @Column({ nullable: true })
+  sessionId: string;
+
   @CreateDateColumn()
   createdAt: Date;
 }
