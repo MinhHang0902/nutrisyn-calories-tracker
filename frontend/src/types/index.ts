@@ -82,5 +82,7 @@ export interface MealPlan {
     calories: number;
     instructions?: string;
   }[];
-  totalCalories: number;
+  source?: "gemini" | "fallback";
+  cuisine?: string;
+  mealType?: string;
 }

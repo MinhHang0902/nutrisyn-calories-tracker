@@ -10,7 +10,8 @@ import { nutritionAPI } from "@/lib/api";
 import { MealPlan } from "@/types";
 import { formatCalories, formatMacro } from "@/lib/utils";
 import { useUserProfileStore } from "@/stores";
-import { Loader2, ChefHat } from "lucide-react";
+import { Loader2, ChefHat, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 
 export default function MealPlannerPage() {
   const { profile } = useUserProfileStore();
@@ -33,8 +34,10 @@ export default function MealPlannerPage() {
         ingredients: formData.ingredients ? formData.ingredients.split(",").map(i => i.trim()) : [],
       });
       setMealPlan(response.data);
-    } catch (error) {
-      console.error("Failed to generate plan:", error);
+      toast.success("Meal plan generated!");
+    } catch (error: any) {
+      const message = error.response?.data?.detail || "Failed to generate meal plan";
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -137,9 +140,15 @@ export default function MealPlannerPage() {
           <CardContent>
             {mealPlan ? (
               <div className="space-y-6">
-                <div className="text-center p-4 rounded-lg bg-muted">
-                  <p className="text-2xl font-bold">{formatCalories(mealPlan.totalCalories)}</p>
-                  <p className="text-sm text-muted-foreground">Total Calories</p>
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                  <div className="flex items-start gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                        I couldn&apos;t find meals that exactly match your calorie target. Here are my suggestions for reference.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {mealPlan.meals.map((meal, i) => (
@@ -154,9 +163,14 @@ export default function MealPlannerPage() {
                       {meal.foods.map((food, j) => (
                         <div key={j} className="flex justify-between">
                           <span className="text-muted-foreground">{food.name}</span>
-                          <span>{formatMacro(food.calories)}</span>
+                          <span>{formatCalories(food.calories)}</span>
                         </div>
                       ))}
+                    </div>
+                    <div className="flex gap-3 text-xs text-muted-foreground">
+                      <span>P: {formatMacro(meal.foods.reduce((s, f) => s + (f.protein || 0), 0))}</span>
+                      <span>C: {formatMacro(meal.foods.reduce((s, f) => s + (f.carbohydrates || 0), 0))}</span>
+                      <span>F: {formatMacro(meal.foods.reduce((s, f) => s + (f.fat || 0), 0))}</span>
                     </div>
                     {meal.instructions && (
                       <p className="text-xs text-muted-foreground">{meal.instructions}</p>

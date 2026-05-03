@@ -338,7 +338,7 @@ API Endpoints:
 
 Cách hoạt động:
   1. Người dùng nhập:
-     - Target calories (số kcal mong muốn cho bữa ăn)
+     - Target calories (số kcal mong muốn cho mỗi bữa ăn)
      - Meal Type: Breakfast / Lunch / Dinner
      - Cuisine (tùy chọn):
          * Vietnamese (Phở, Cơm tấm, Bún chả, Bánh mì...)
@@ -347,21 +347,30 @@ Cách hoạt động:
          * Western (Pasta, Grilled chicken, Oatmeal...)
      - Preferred ingredients (tùy chọn): danh sách nguyên liệu ưa thích
 
-  2. AI Service xử lý:
-     a. Chọn template theo cuisine + mealType
-     b. Mỗi category có 3-4 mẫu bữa ăn với foods và base calories
-     c. Tính scale factor = target_calories / base_calories
-     d. Scale tất cả macros theo tỷ lệ
-     e. Random chọn 3 bữa ăn phù hợp
-     f. Thêm cooking instructions cơ bản
+  2. AI Service xử lý (dùng Gemini API):
+     a. Gửi prompt đến Gemini 2.0 Flash với:
+        - Target calories: Gemini tạo món ăn xấp xỉ số calo này (±10-15%)
+        - Cuisine: Phong cách ẩm thực tương ứng
+        - Meal type: Loại bữa ăn phù hợp (breakfast/lunch/dinner)
+        - Ingredients: Nếu có, Gemini sẽ ưu tiên đưa vào món ăn
+     b. Gemini trả về JSON với:
+        - 3 món ăn độc lập (3 lựa chọn thay thế, không phải plan kết hợp)
+        - Mỗi món có danh sách thành phần cụ thể + dinh dưỡng chi tiết
+        - Bước hướng dẫn nấu ăn
+     c. Frontend hiển thị thông báo:
+        "I couldn't find meals that exactly match your calorie target.
+         Here are my suggestions for reference."
+        (Vì Gemini không thể đảm bảo chính xác 100% calo yêu cầu)
+     d. Nếu Gemini lỗi hoặc không có API key → Trả về HTTP 502/503
 
   3. Frontend hiển thị:
-     - Tổng calories của plan
-     - Danh sách 3 bữa ăn với:
-         * Tên bữa ăn
-         * Danh sách món + dinh dưỡng từng món
-         * Tổng calo mỗi bữa
+     - Badge "AI Generated" cho kết quả
+     - 3 món ăn thay thế với:
+         * Tên món ăn (phong cách cuisine đã chọn)
+         * Danh sách thành phần + dinh dưỡng từng thành phần
+         * Tổng calo, P, C, F của mỗi món
          * Hướng dẫn nấu cơ bản
+     - Toast notification: Success khi thành công, Error khi thất bại
 
 ------------------------------------------------------------------------------
 7. BMI CALCULATOR - TÍNH CHỈ SỐ BMI
@@ -738,8 +747,9 @@ CÁC VẤN ĐỀ CẦN LƯU Ý
    - Nếu user xóa browser data → mất lịch sử cân nặng
 
 6. Meal Planner:
-   - Dùng template có sẵn, không gọi Gemini để tạo plan thông minh
-   - Chỉ random chọn từ template, không cá nhân hóa theo user preferences
+   - Đã chuyển sang dùng Gemini API hoàn toàn (không còn template)
+   - Mỗi request gọi Gemini tạo 3 món ăn mới độc lập
+   - Cần GEMINI_API_KEY hợp lệ, nếu không sẽ trả về 502/503
 
 7. Nutrition Finder:
    - Gemini API được gọi mỗi lần search (có thể chậm)
