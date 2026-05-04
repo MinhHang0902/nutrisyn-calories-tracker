@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,14 +11,13 @@ import { formatCalories, formatMacro } from "@/lib/utils";
 import {
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
   ColumnDef,
   SortingState,
 } from "@tanstack/react-table";
-import { format } from "date-fns";
+import { format, startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { ChevronDown, ChevronUp, Search, Calendar, Trash2 } from "lucide-react";
 
 export default function HistoryPage() {
@@ -139,34 +138,61 @@ export default function HistoryPage() {
     }
   };
 
-  const filteredMeals = dateFilter === "all"
-    ? meals
-    : meals.filter((meal) => {
-        const mealDate = new Date(meal.createdAt);
-        const now = new Date();
-        if (dateFilter === "today") {
-          return mealDate.toDateString() === now.toDateString();
-        }
-        if (dateFilter === "week") {
-          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          return mealDate >= weekAgo;
-        }
-        if (dateFilter === "month") {
-          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          return mealDate >= monthAgo;
-        }
-        return true;
-      });
+  const filteredMeals = useMemo(() => {
+    if (dateFilter === "all") return meals;
+
+    const now = new Date();
+    const mealDate = (meal: Meal) => {
+      const d = new Date(meal.createdAt);
+      return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    };
+
+    return meals.filter((meal) => {
+      const mDate = mealDate(meal);
+      if (dateFilter === "today") {
+        const today = startOfDay(now);
+        return mDate.getTime() === today.getTime();
+      }
+      if (dateFilter === "week") {
+        const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+        return mDate >= weekStart;
+      }
+      if (dateFilter === "month") {
+        const monthStart = startOfMonth(now);
+        return mDate >= monthStart;
+      }
+      return true;
+    });
+  }, [meals, dateFilter]);
+
+  const searchedMeals = useMemo(() => {
+    if (!globalFilter.trim()) return filteredMeals;
+
+    const query = globalFilter.toLowerCase();
+    return filteredMeals.filter((meal) => {
+      const foodNames = meal.foods?.map((f) => f.name).join(" ").toLowerCase() || "";
+      const searchable = [
+        format(new Date(meal.createdAt), "MMM dd, yyyy HH:mm"),
+        meal.mealType,
+        foodNames,
+        String(meal.totalCalories),
+        String(meal.totalProtein),
+        String(meal.totalCarbs),
+        String(meal.totalFat),
+        meal.score || "",
+      ].join(" ").toLowerCase();
+      return searchable.includes(query);
+    });
+  }, [globalFilter, filteredMeals]);
 
   const table = useReactTable({
-    data: filteredMeals,
+    data: searchedMeals,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
-    state: { sorting, globalFilter },
+    state: { sorting },
   });
 
   return (

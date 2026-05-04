@@ -96,9 +96,9 @@ export class ChatService {
     return sessions;
   }
 
-  async getSession(userId: string, sessionId: string) {
+  async getSession(userId: string, sessionId: string | null) {
     const records = await this.chatHistoryRepository.find({
-      where: { userId, sessionId },
+      where: { userId, sessionId: sessionId as any },
       order: { createdAt: 'ASC' },
     });
 
@@ -110,10 +110,19 @@ export class ChatService {
     return { sessionId, messages, createdAt: records[0]?.createdAt };
   }
 
-  async deleteSession(userId: string, sessionId: string) {
-    const result = await this.chatHistoryRepository.delete({ userId, sessionId });
-    if (result.affected === 0) {
-      throw new NotFoundException('Chat session not found');
+  async deleteSession(userId: string, sessionId: string | null) {
+    if (sessionId) {
+      const result = await this.chatHistoryRepository.delete({ userId, sessionId });
+      if (result.affected === 0) {
+        throw new NotFoundException('Chat session not found');
+      }
+    } else {
+      const records = await this.chatHistoryRepository.find({
+        where: { userId, sessionId: null as any },
+      });
+      for (const record of records) {
+        await this.chatHistoryRepository.delete(record.id);
+      }
     }
     return { message: 'Chat session deleted' };
   }

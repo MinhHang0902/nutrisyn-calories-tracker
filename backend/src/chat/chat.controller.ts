@@ -28,12 +28,14 @@ export class ChatController {
   @Get('history/:sessionId')
   @ApiOperation({ summary: 'Get a specific chat session' })
   async getSession(@Request() req, @Param('sessionId') sessionId: string) {
-    return this.chatService.getSession(req.user.id, sessionId);
+    const id = sessionId === 'null' ? null : sessionId;
+    return this.chatService.getSession(req.user.id, id);
   }
 
   @Delete('history/:sessionId')
   @ApiOperation({ summary: 'Delete a chat session' })
   async deleteSession(@Request() req, @Param('sessionId') sessionId: string) {
-    return this.chatService.deleteSession(req.user.id, sessionId);
+    const id = sessionId === 'null' ? null : sessionId;
+    return this.chatService.deleteSession(req.user.id, id);
   }
 }

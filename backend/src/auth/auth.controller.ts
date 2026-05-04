@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
@@ -27,5 +27,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user' })
   async getProfile(@Request() req) {
     return req.user;
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Reset password via email' })
+  async forgotPassword(@Body() body: { email: string; newPassword: string }) {
+    return this.authService.forgotPassword(body.email, body.newPassword);
   }
 }

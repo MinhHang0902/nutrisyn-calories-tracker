@@ -25,6 +25,7 @@ const MESSAGE_LIMIT = 15;
 
 interface ChatSession {
   sessionId: string;
+  originalSessionId: string | null;
   messages: ChatMessage[];
   firstMessage: string;
   lastMessage: string;
@@ -80,7 +81,11 @@ export default function ChatPage() {
     try {
       const response = await chatAPI.getHistory();
       if (response.data?.length > 0) {
-        setChatHistory(response.data);
+        const mapped = response.data.map((s: any) => ({
+          ...s,
+          originalSessionId: s.sessionId || null,
+        }));
+        setChatHistory(mapped);
       }
     } catch (error) {
       console.error("Failed to load chat history");
@@ -89,12 +94,12 @@ export default function ChatPage() {
     }
   };
 
-  const deleteSession = async (sid: string, e: React.MouseEvent) => {
+  const deleteSession = async (session: ChatSession, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await chatAPI.deleteSession(sid);
-      setChatHistory((prev) => prev.filter((s) => s.sessionId !== sid));
-      if (viewingSession?.sessionId === sid) {
+      await chatAPI.deleteSession(session.originalSessionId);
+      setChatHistory((prev) => prev.filter((s) => s.sessionId !== session.sessionId));
+      if (viewingSession?.sessionId === session.sessionId) {
         setViewingSession(null);
       }
       toast.success("Conversation deleted");
@@ -209,8 +214,7 @@ export default function ChatPage() {
                     <div>
                       <DialogTitle>Conversation</DialogTitle>
                       <DialogDescription className="flex items-center gap-2 mt-1">
-                        <MessageSquare className="h-3 w-3" />
-                        {viewingSession.messageCount} messages · {formatDate(viewingSession.createdAt)}
+                        {formatDate(viewingSession.createdAt)}
                       </DialogDescription>
                     </div>
                     <div className="flex items-center gap-2">
@@ -218,7 +222,7 @@ export default function ChatPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setViewingSession(null)}
-                      className="text-red-500 font-bold"
+                      className="text-blue-500 font-bold"
                     >
                       &lt; Back
                     </Button>
@@ -294,20 +298,14 @@ export default function ChatPage() {
                         onClick={() => viewSession(session)}
                       >
                         <button
-                          onClick={(e) => deleteSession(session.sessionId, e)}
+                          onClick={(e) => deleteSession(session, e)}
                           className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Clock className="h-3 w-3" />
-                            {formatDate(session.updatedAt)}
-                          </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MessageSquare className="h-3 w-3" />
-                            {session.messageCount} messages
-                          </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          {formatDate(session.updatedAt)}
                         </div>
                         <div className="space-y-1 pr-8">
                           <p className="text-sm truncate">

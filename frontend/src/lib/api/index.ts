@@ -36,6 +36,8 @@ export const authAPI = {
   register: (email: string, password: string, name: string) =>
     api.post("/auth/register", { email, password, name }),
   logout: () => api.post("/auth/logout"),
+  forgotPassword: (email: string, newPassword: string) =>
+    api.post("/auth/forgot-password", { email, newPassword }),
 };
 
 export const userAPI = {
@@ -87,5 +89,6 @@ export const chatAPI = {
     api.post("/chat/message", { message, sessionId, context }),
   getHistory: () => api.get("/chat/history"),
   getSession: (sessionId: string) => api.get(`/chat/history/${sessionId}`),
-  deleteSession: (sessionId: string) => api.delete(`/chat/history/${sessionId}`),
+  deleteSession: (sessionId: string | null) =>
+    api.delete(`/chat/history/${sessionId === null ? "null" : sessionId}`),
 };
